@@ -515,12 +515,23 @@ const Comentario = ({ com, eu, comentarios, curtidas, recarregar }) => {
 };
 
 // ============================================================
-// CALLS (agenda real; fundador edita)
+// CALLS (agenda real; fundador cria, edita e exclui)
 // ============================================================
+const FORMATOS = [
+  { nome: "Atualizações", cor: "#2AF0E6" },
+  { nome: "Auditoria", cor: "#FF3B5C" },
+  { nome: "Convidado", cor: "#FFC24B" },
+  { nome: "Q&A", cor: "#9B8CFF" },
+];
+
 const Calls = ({ eu, calls, recarregar }) => {
   const [editandoId, setEditandoId] = useState(null);
   const [tit, setTit] = useState("");
   const [dt, setDt] = useState("");
+  const [criando, setCriando] = useState(false);
+  const [novoTit, setNovoTit] = useState("");
+  const [novoDt, setNovoDt] = useState("");
+  const [novoFormato, setNovoFormato] = useState("Atualizações");
   const prox = calls.filter((c) => new Date(c.quando).getTime() > Date.now())[0];
 
   const abrirEdicao = (c) => { setEditandoId(c.id); setTit(c.titulo); setDt(paraInputLocal(c.quando)); };
@@ -530,14 +541,58 @@ const Calls = ({ eu, calls, recarregar }) => {
     setEditandoId(null);
     recarregar();
   };
+  const excluirCall = async (id) => {
+    await supabase.from("calls").delete().eq("id", id);
+    setEditandoId(null);
+    recarregar();
+  };
+  const criarCall = async () => {
+    if (!novoTit.trim() || !novoDt) return;
+    const f = FORMATOS.find((x) => x.nome === novoFormato) || FORMATOS[0];
+    await supabase.from("calls").insert({ titulo: novoTit.trim(), formato: f.nome, cor: f.cor, quando: new Date(novoDt).toISOString() });
+    setNovoTit("");
+    setNovoDt("");
+    setCriando(false);
+    recarregar();
+  };
 
   const inputStyle = { width: "100%", background: C.surface2, border: `1px solid ${C.cyan}66`, borderRadius: 10, padding: "10px 12px", color: C.text, fontSize: 14, outline: "none", fontFamily: "'Inter', sans-serif", colorScheme: "dark" };
 
   return (
     <div>
       <p style={{ fontSize: 13.5, color: C.muted, marginBottom: 18, lineHeight: 1.5 }}>
-        {eu.fundador ? "Você define data e horário de cada call — a contagem do Início se ajusta pra todos os membros." : "Os encontros ao vivo da comunidade. Chegue alguns minutos antes!"}
+        {eu.fundador ? "Você define a agenda — a contagem do Início se ajusta pra todos os membros." : "Os encontros ao vivo da comunidade. Chegue alguns minutos antes!"}
       </p>
+
+      {eu.fundador && (
+        criando ? (
+          <div style={{ background: C.surface, border: `1px solid ${C.cyan}55`, borderRadius: 14, padding: 18, marginBottom: 14, display: "flex", flexDirection: "column", gap: 8 }}>
+            <label style={{ fontSize: 12, color: C.muted }}>Título da call</label>
+            <input style={inputStyle} value={novoTit} onChange={(e) => setNovoTit(e.target.value)} placeholder="Ex.: O que mudou no TikTok Ads esta semana" />
+            <label style={{ fontSize: 12, color: C.muted, marginTop: 6 }}>Formato</label>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {FORMATOS.map((f) => (
+                <button key={f.nome} onClick={() => setNovoFormato(f.nome)} style={{ padding: "6px 13px", borderRadius: 999, fontSize: 12, fontWeight: 600, border: `1px solid ${novoFormato === f.nome ? f.cor : C.border}`, background: novoFormato === f.nome ? `${f.cor}14` : "transparent", color: novoFormato === f.nome ? f.cor : C.muted }}>
+                  {f.nome}
+                </button>
+              ))}
+            </div>
+            <label style={{ fontSize: 12, color: C.muted, marginTop: 6 }}>Data e horário</label>
+            <input style={inputStyle} type="datetime-local" value={novoDt} onChange={(e) => setNovoDt(e.target.value)} />
+            <div style={{ display: "flex", gap: 14, marginTop: 8 }}>
+              <button onClick={criarCall} style={{ padding: "10px 22px", borderRadius: 10, border: "none", background: novoTit.trim() && novoDt ? `linear-gradient(90deg, ${C.cyan}, #7FF7F0)` : C.surface2, color: novoTit.trim() && novoDt ? "#06231F" : C.muted, fontWeight: 600, fontSize: 13.5 }}>
+                Agendar call
+              </button>
+              <BotaoMini onClick={() => setCriando(false)}>Cancelar</BotaoMini>
+            </div>
+          </div>
+        ) : (
+          <button onClick={() => setCriando(true)} style={{ width: "100%", padding: "13px 0", borderRadius: 14, border: `1px dashed ${C.cyan}66`, background: `${C.cyan}0A`, color: C.cyan, fontWeight: 600, fontSize: 14, marginBottom: 14 }}>
+            + Agendar nova call
+          </button>
+        )
+      )}
+
       {calls.map((c) => (
         <div key={c.id} style={{ background: C.surface, border: `1px solid ${prox && c.id === prox.id ? C.pink + "55" : C.border}`, borderRadius: 14, padding: 18, marginBottom: 14, display: "flex", flexDirection: "column", gap: 8 }}>
           {editandoId === c.id ? (
@@ -549,6 +604,7 @@ const Calls = ({ eu, calls, recarregar }) => {
               <div style={{ display: "flex", gap: 14, marginTop: 8 }}>
                 <BotaoMini onClick={() => salvar(c.id)} cor={C.cyan}>Salvar</BotaoMini>
                 <BotaoMini onClick={() => setEditandoId(null)}>Cancelar</BotaoMini>
+                <BotaoMini onClick={() => excluirCall(c.id)} cor="#E86A7A">Excluir call</BotaoMini>
               </div>
             </>
           ) : (
@@ -624,10 +680,24 @@ const Membros = ({ eu, perfil, membros, recarregar }) => {
   const onFoto = (e) => {
     const f = e.target.files && e.target.files[0];
     if (!f) return;
-    if (f.size > 1.5 * 1024 * 1024) { alert("Escolha uma imagem de até 1,5 MB."); return; }
-    const r = new FileReader();
-    r.onload = () => setDraft((d) => ({ ...d, foto_url: r.result }));
-    r.readAsDataURL(f);
+    // Comprime a foto no navegador: qualquer tamanho entra e vira um avatar leve
+    const img = new Image();
+    const url = URL.createObjectURL(f);
+    img.onload = () => {
+      const MAX = 400; // px no maior lado - suficiente pra avatar nitido
+      const escala = Math.min(MAX / img.width, MAX / img.height, 1);
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(img.width * escala));
+      canvas.height = Math.max(1, Math.round(img.height * escala));
+      canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+      setDraft((d) => ({ ...d, foto_url: canvas.toDataURL("image/jpeg", 0.85) }));
+      URL.revokeObjectURL(url);
+    };
+    img.onerror = () => {
+      alert("Não foi possível ler essa imagem. Tente outro arquivo (JPG ou PNG).");
+      URL.revokeObjectURL(url);
+    };
+    img.src = url;
   };
 
   const inputStyle = { width: "100%", background: C.surface2, border: `1px solid ${C.cyan}66`, borderRadius: 10, padding: "10px 12px", color: C.text, fontSize: 14, outline: "none", fontFamily: "'Inter', sans-serif" };
