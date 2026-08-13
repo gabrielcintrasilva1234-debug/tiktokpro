@@ -122,6 +122,7 @@ export default function ComunidadeUI() {
   const [comentarios, setComentarios] = useState([]);
   const [curtidas, setCurtidas] = useState([]);
   const [membros, setMembros] = useState([]);
+  const [gravacoes, setGravacoes] = useState([]);
 
   const carregar = useCallback(async () => {
     const { data: { session } } = await supabase.auth.getSession();
@@ -131,7 +132,7 @@ export default function ComunidadeUI() {
     const fundador = email === (process.env.NEXT_PUBLIC_FOUNDER_EMAIL || "").toLowerCase();
     setEu({ id: uid, email, fundador });
 
-    const [rPerfil, rAss, rCalls, rPosts, rComs, rCurt, rMembros] = await Promise.all([
+    const [rPerfil, rAss, rCalls, rPosts, rComs, rCurt, rMembros, rGrav] = await Promise.all([
       supabase.from("profiles").select("*").eq("id", uid).maybeSingle(),
       supabase.from("assinaturas").select("status, plano, expira_em, atualizado_em").eq("user_id", uid).maybeSingle(),
       supabase.from("calls").select("*").order("quando", { ascending: true }),
@@ -139,6 +140,7 @@ export default function ComunidadeUI() {
       supabase.from("comentarios").select("*, autor:profiles(nome, foto_url)").order("criado_em", { ascending: true }),
       supabase.from("curtidas").select("*"),
       supabase.from("profiles").select("id, nome, nicho, gestao, bio, foto_url").order("criado_em", { ascending: true }),
+      supabase.from("gravacoes").select("*").order("criado_em", { ascending: false }),
     ]);
 
     setPerfil(rPerfil.data || null);
@@ -148,6 +150,7 @@ export default function ComunidadeUI() {
     setComentarios(rComs.data || []);
     setCurtidas(rCurt.data || []);
     setMembros(rMembros.data || []);
+    setGravacoes(rGrav.data || []);
     setCarregando(false);
   }, []);
 
@@ -200,7 +203,7 @@ export default function ComunidadeUI() {
         <main style={{ maxWidth: 760, margin: "0 auto", padding: "20px 20px 60px" }}>
           {aba === "inicio" && <Feed eu={eu} perfil={perfil} calls={calls} posts={posts} comentarios={comentarios} curtidas={curtidas} recarregar={carregar} />}
           {aba === "calls" && <Calls eu={eu} calls={calls} recarregar={carregar} />}
-          {aba === "gravacoes" && <Gravacoes />}
+          {aba === "gravacoes" && <Gravacoes eu={eu} gravacoes={gravacoes} recarregar={carregar} />}
           {aba === "membros" && <Membros eu={eu} perfil={perfil} membros={membros} recarregar={carregar} />}
           {aba === "assinatura" && <Assinatura eu={eu} assinatura={assinatura} />}
         </main>
@@ -528,16 +531,18 @@ const Calls = ({ eu, calls, recarregar }) => {
   const [editandoId, setEditandoId] = useState(null);
   const [tit, setTit] = useState("");
   const [dt, setDt] = useState("");
+  const [lk, setLk] = useState("");
   const [criando, setCriando] = useState(false);
   const [novoTit, setNovoTit] = useState("");
   const [novoDt, setNovoDt] = useState("");
+  const [novoLink, setNovoLink] = useState("");
   const [novoFormato, setNovoFormato] = useState("Atualizações");
   const prox = calls.filter((c) => new Date(c.quando).getTime() > Date.now())[0];
 
-  const abrirEdicao = (c) => { setEditandoId(c.id); setTit(c.titulo); setDt(paraInputLocal(c.quando)); };
+  const abrirEdicao = (c) => { setEditandoId(c.id); setTit(c.titulo); setDt(paraInputLocal(c.quando)); setLk(c.link || ""); };
   const salvar = async (id) => {
     if (!tit.trim() || !dt) return;
-    await supabase.from("calls").update({ titulo: tit.trim(), quando: new Date(dt).toISOString() }).eq("id", id);
+    await supabase.from("calls").update({ titulo: tit.trim(), quando: new Date(dt).toISOString(), link: lk.trim() || null }).eq("id", id);
     setEditandoId(null);
     recarregar();
   };
@@ -549,9 +554,10 @@ const Calls = ({ eu, calls, recarregar }) => {
   const criarCall = async () => {
     if (!novoTit.trim() || !novoDt) return;
     const f = FORMATOS.find((x) => x.nome === novoFormato) || FORMATOS[0];
-    await supabase.from("calls").insert({ titulo: novoTit.trim(), formato: f.nome, cor: f.cor, quando: new Date(novoDt).toISOString() });
+    await supabase.from("calls").insert({ titulo: novoTit.trim(), formato: f.nome, cor: f.cor, quando: new Date(novoDt).toISOString(), link: novoLink.trim() || null });
     setNovoTit("");
     setNovoDt("");
+    setNovoLink("");
     setCriando(false);
     recarregar();
   };
@@ -579,6 +585,8 @@ const Calls = ({ eu, calls, recarregar }) => {
             </div>
             <label style={{ fontSize: 12, color: C.muted, marginTop: 6 }}>Data e horário</label>
             <input style={inputStyle} type="datetime-local" value={novoDt} onChange={(e) => setNovoDt(e.target.value)} />
+            <label style={{ fontSize: 12, color: C.muted, marginTop: 6 }}>Link da sala (Zoom/Meet) — pode adicionar depois</label>
+            <input style={inputStyle} value={novoLink} onChange={(e) => setNovoLink(e.target.value)} placeholder="https://meet.google.com/… ou https://zoom.us/j/…" />
             <div style={{ display: "flex", gap: 14, marginTop: 8 }}>
               <button onClick={criarCall} style={{ padding: "10px 22px", borderRadius: 10, border: "none", background: novoTit.trim() && novoDt ? `linear-gradient(90deg, ${C.cyan}, #7FF7F0)` : C.surface2, color: novoTit.trim() && novoDt ? "#06231F" : C.muted, fontWeight: 600, fontSize: 13.5 }}>
                 Agendar call
@@ -601,6 +609,8 @@ const Calls = ({ eu, calls, recarregar }) => {
               <input style={inputStyle} value={tit} onChange={(e) => setTit(e.target.value)} />
               <label style={{ fontSize: 12, color: C.muted, marginTop: 6 }}>Data e horário</label>
               <input style={inputStyle} type="datetime-local" value={dt} onChange={(e) => setDt(e.target.value)} />
+              <label style={{ fontSize: 12, color: C.muted, marginTop: 6 }}>Link da sala (Zoom/Meet)</label>
+              <input style={inputStyle} value={lk} onChange={(e) => setLk(e.target.value)} placeholder="https://meet.google.com/… ou https://zoom.us/j/…" />
               <div style={{ display: "flex", gap: 14, marginTop: 8 }}>
                 <BotaoMini onClick={() => salvar(c.id)} cor={C.cyan}>Salvar</BotaoMini>
                 <BotaoMini onClick={() => setEditandoId(null)}>Cancelar</BotaoMini>
@@ -618,10 +628,16 @@ const Calls = ({ eu, calls, recarregar }) => {
               </div>
               <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 16.5, color: C.text, lineHeight: 1.35 }}>{c.titulo}</div>
               {prox && c.id === prox.id && (
-                <button style={{ alignSelf: "flex-start", marginTop: 4, padding: "10px 18px", borderRadius: 10, border: "none", background: C.pink, color: "#fff", fontWeight: 600, fontSize: 13.5, display: "flex", alignItems: "center" }}>
-                  <LiveDot />
-                  Entrar na sala quando abrir
-                </button>
+                c.link ? (
+                  <a href={c.link} target="_blank" rel="noreferrer" style={{ alignSelf: "flex-start", marginTop: 4, padding: "10px 18px", borderRadius: 10, border: "none", background: C.pink, color: "#fff", fontWeight: 600, fontSize: 13.5, display: "flex", alignItems: "center", textDecoration: "none" }}>
+                    <LiveDot />
+                    Entrar na sala
+                  </a>
+                ) : (
+                  <div style={{ alignSelf: "flex-start", marginTop: 4, padding: "10px 18px", borderRadius: 10, border: `1px solid ${C.border}`, background: C.surface2, color: C.muted, fontWeight: 600, fontSize: 13.5 }}>
+                    O link da sala será liberado aqui antes da call
+                  </div>
+                )
               )}
             </>
           )}
@@ -632,19 +648,107 @@ const Calls = ({ eu, calls, recarregar }) => {
 };
 
 // ============================================================
-// GRAVACOES (biblioteca - por enquanto vazia)
+// GRAVACOES (biblioteca real; fundador adiciona os replays por link)
 // ============================================================
-const Gravacoes = () => (
-  <div style={{ textAlign: "center", padding: "50px 20px", color: C.muted }}>
-    <div style={{ fontSize: 40, marginBottom: 12 }}>🎬</div>
-    <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 17, color: C.text, marginBottom: 8 }}>
-      Os replays das calls vão morar aqui
+const Gravacoes = ({ eu, gravacoes, recarregar }) => {
+  const [criando, setCriando] = useState(false);
+  const [tit, setTit] = useState("");
+  const [formato, setFormato] = useState("Atualizações");
+  const [duracao, setDuracao] = useState("");
+  const [link, setLink] = useState("");
+  const [salvando, setSalvando] = useState(false);
+
+  const inputStyle = { width: "100%", background: C.surface2, border: `1px solid ${C.cyan}66`, borderRadius: 10, padding: "10px 12px", color: C.text, fontSize: 14, outline: "none", fontFamily: "'Inter', sans-serif" };
+
+  const adicionar = async () => {
+    if (!tit.trim() || !link.trim() || salvando) return;
+    setSalvando(true);
+    const f = FORMATOS.find((x) => x.nome === formato) || FORMATOS[0];
+    await supabase.from("gravacoes").insert({ titulo: tit.trim(), formato: f.nome, cor: f.cor, duracao: duracao.trim() || null, link: link.trim() });
+    setTit(""); setDuracao(""); setLink("");
+    setSalvando(false);
+    setCriando(false);
+    recarregar();
+  };
+  const excluir = async (id) => {
+    await supabase.from("gravacoes").delete().eq("id", id);
+    recarregar();
+  };
+
+  return (
+    <div>
+      <p style={{ fontSize: 13.5, color: C.muted, marginBottom: 18, lineHeight: 1.5 }}>
+        {eu.fundador
+          ? "Terminou a call? Suba o vídeo no YouTube como \"não listado\" e cole o link aqui — os membros assistem direto."
+          : "Perdeu uma call ao vivo? Os replays ficam disponíveis aqui."}
+      </p>
+
+      {eu.fundador && (
+        criando ? (
+          <div style={{ background: C.surface, border: `1px solid ${C.cyan}55`, borderRadius: 14, padding: 18, marginBottom: 14, display: "flex", flexDirection: "column", gap: 8 }}>
+            <label style={{ fontSize: 12, color: C.muted }}>Título da gravação</label>
+            <input style={inputStyle} value={tit} onChange={(e) => setTit(e.target.value)} placeholder="Ex.: Call 12/08 — O que mudou no TikTok Ads" />
+            <label style={{ fontSize: 12, color: C.muted, marginTop: 6 }}>Formato</label>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {FORMATOS.map((f) => (
+                <button key={f.nome} onClick={() => setFormato(f.nome)} style={{ padding: "6px 13px", borderRadius: 999, fontSize: 12, fontWeight: 600, border: `1px solid ${formato === f.nome ? f.cor : C.border}`, background: formato === f.nome ? `${f.cor}14` : "transparent", color: formato === f.nome ? f.cor : C.muted }}>
+                  {f.nome}
+                </button>
+              ))}
+            </div>
+            <label style={{ fontSize: 12, color: C.muted, marginTop: 6 }}>Duração (opcional)</label>
+            <input style={inputStyle} value={duracao} onChange={(e) => setDuracao(e.target.value)} placeholder="Ex.: 58 min ou 1h12" />
+            <label style={{ fontSize: 12, color: C.muted, marginTop: 6 }}>Link do vídeo (YouTube não listado, Drive ou Loom)</label>
+            <input style={inputStyle} value={link} onChange={(e) => setLink(e.target.value)} placeholder="https://youtu.be/…" />
+            <div style={{ display: "flex", gap: 14, marginTop: 8 }}>
+              <button onClick={adicionar} style={{ padding: "10px 22px", borderRadius: 10, border: "none", background: tit.trim() && link.trim() && !salvando ? `linear-gradient(90deg, ${C.cyan}, #7FF7F0)` : C.surface2, color: tit.trim() && link.trim() && !salvando ? "#06231F" : C.muted, fontWeight: 600, fontSize: 13.5 }}>
+                {salvando ? "Publicando…" : "Publicar gravação"}
+              </button>
+              <BotaoMini onClick={() => setCriando(false)}>Cancelar</BotaoMini>
+            </div>
+          </div>
+        ) : (
+          <button onClick={() => setCriando(true)} style={{ width: "100%", padding: "13px 0", borderRadius: 14, border: `1px dashed ${C.cyan}66`, background: `${C.cyan}0A`, color: C.cyan, fontWeight: 600, fontSize: 14, marginBottom: 14 }}>
+            + Adicionar gravação
+          </button>
+        )
+      )}
+
+      {gravacoes.length === 0 && !eu.fundador && (
+        <div style={{ textAlign: "center", padding: "40px 20px", color: C.muted }}>
+          <div style={{ fontSize: 40, marginBottom: 12 }}>🎬</div>
+          <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 17, color: C.text, marginBottom: 8 }}>
+            Os replays das calls vão morar aqui
+          </div>
+          <p style={{ fontSize: 13.5, lineHeight: 1.6, maxWidth: 380, margin: "0 auto" }}>
+            Toda call ao vivo é gravada e disponibilizada nesta biblioteca. Participe da primeira e volte aqui pra rever!
+          </p>
+        </div>
+      )}
+
+      {gravacoes.map((g) => (
+        <div key={g.id} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: 16, marginBottom: 12, display: "flex", gap: 14, alignItems: "center" }}>
+          <a href={g.link} target="_blank" rel="noreferrer" style={{ width: 46, height: 46, borderRadius: 12, background: C.surface2, border: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, flexShrink: 0, textDecoration: "none" }}>
+            ▶
+          </a>
+          <div style={{ flex: 1 }}>
+            <a href={g.link} target="_blank" rel="noreferrer" style={{ fontWeight: 600, fontSize: 14.5, color: C.text, lineHeight: 1.4, marginBottom: 4, display: "block", textDecoration: "none" }}>
+              {g.titulo}
+            </a>
+            <div style={{ fontSize: 12.5, color: C.muted }}>
+              {new Date(g.criado_em).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" }).replace(/\./g, "")}
+              {g.duracao ? ` · ${g.duracao}` : ""} · {g.formato}
+            </div>
+          </div>
+          <a href={g.link} target="_blank" rel="noreferrer" style={{ textDecoration: "none", padding: "9px 16px", borderRadius: 9, border: `1px solid ${C.cyan}55`, background: `${C.cyan}12`, color: C.cyan, fontWeight: 600, fontSize: 12.5, flexShrink: 0 }}>
+            Assistir
+          </a>
+          {eu.fundador && <BotaoMini onClick={() => excluir(g.id)} cor="#E86A7A">Excluir</BotaoMini>}
+        </div>
+      ))}
     </div>
-    <p style={{ fontSize: 13.5, lineHeight: 1.6, maxWidth: 380, margin: "0 auto" }}>
-      Toda call ao vivo é gravada e disponibilizada nesta biblioteca. Participe da primeira e volte aqui pra rever!
-    </p>
-  </div>
-);
+  );
+};
 
 // ============================================================
 // MEMBROS (perfis reais + edicao do proprio)
